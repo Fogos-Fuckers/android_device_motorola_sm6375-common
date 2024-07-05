@@ -39,8 +39,8 @@ on early-init
     setprop ro.vendor.boot.powerup_reason ${ro.boot.powerup_reason}
     setprop ro.vendor.boot.bl_state ${ro.boot.bl_state}
     setprop ro.vendor.boot.serialno ${ro.boot.serialno}
+    setprop ro.vendor.boot.nal_id ${ro.boot.nal_id}
     setprop ro.vendor.zygote ${ro.zygote}
-    setprop persist.radio.multisim.config ${persist.vendor.radio.multisim.config}
 
     # Make sure ro.boot.product.hardware.sku is set before hwservicemanager startup.
     setprop ro.boot.product.hardware.sku ${ro.vendor.product.hardware.sku.variant}
@@ -75,6 +75,7 @@ on post-fs && property:ro.vendor.hw.fsg_super_image=yes
 
 on post-fs
     mkdir /mnt/vendor/persist/camera 0755 vendor_tcmd vendor_tcmd
+    mkdir /mnt/vendor/persist/camera/iqtuning 0755 vendor_tcmd vendor_tcmd
     mkdir /mnt/vendor/persist/camera/dualcal 0775 camera vendor_tcmd
     mkdir /mnt/vendor/persist/camera/focus 0775 camera vendor_tcmd
     mkdir /mnt/vendor/persist/camera/ledcal 0775 camera vendor_tcmd
@@ -131,14 +132,6 @@ on post-fs
     # Set capsensor calibration sysfs for MDMCTBK
     chown radio radio /sys/class/capsense/calibrate
     chmod 0660 /sys/class/capsense/calibrate
-
-    # Zram
-    setprop ro.zram.mark_idle_delay_mins 60
-    setprop ro.zram.first_wb_delay_mins 1440
-    setprop ro.zram.periodic_wb_delay_hours 24
-    write /sys/block/zram0/comp_algorithm lz4
-    write /proc/sys/vm/swappiness 100
-    setprop sys.sysctl.swappiness 100
 
 on post-fs-data
     # Setup folders for security
@@ -246,6 +239,9 @@ on post-fs-data
     # Imager tuning data for camera subsystem
     mkdir /data/vendor/misc/imager 0771 camera camera
 
+    # Imager tuning metadata for camera subsystem
+    mkdir /data/vendor/misc/imager/metadata 0771 camera camera
+
     # NFC vendor data
     mkdir /data/vendor/nfc 0770 nfc nfc
 
@@ -255,10 +251,6 @@ on post-fs-data
 
     # Required by touchRec for write the touch data
     mkdir /data/vendor/touchrec 0770 input input
-    chown input input /data/vendor/touchrec/bootindex
-    chown input input /data/vendor/touchrec/lastbootuuid
-    chown input input /data/vendor/touchrec/touch_data.txt
-    chmod 0664 /data/vendor/touchrec/touch_data.txt
 
 on boot
    # restore default console_loglevel to KERN_DEBUG
@@ -293,14 +285,14 @@ on boot
    chown audio audio /sys/kernel/aov/register
    chown audio audio /sys/kernel/aov/event
 
+   # Quiet binder logs
+   write /sys/module/binder/parameters/debug_mask 0x5
+
    # Clear cooldown state
    mkdir /mnt/vendor/persist/chargeonly 0770 system system
    write /mnt/vendor/persist/chargeonly/cooldown n
    chown system system /mnt/vendor/persist/chargeonly/cooldown
    chmod 0660 /mnt/vendor/persist/chargeonly/cooldown
-
-   # Quiet binder logs
-   write /sys/module/binder/parameters/debug_mask 0x5
 
    # Change owner ship of l5 laser calibration
    chown camera vendor_tcmd /mnt/vendor/persist/camera/focus/offset_cal
@@ -315,17 +307,11 @@ on boot
    chmod 0664 /sys/class/power_supply/battery/device/force_charger_suspend
    chown vendor_tcmd system /sys/class/power_supply/battery/device/force_charger_suspend
 
-on late-fs-charger
-    class_start early_hal
-    mount_all /vendor/etc/fstab.qcom --late
-    # Boot time fs tune
-    write /sys/block/dm-9/queue/read_ahead_kb 2048
-
 on charger
     trigger early-fs
     trigger fs
     trigger post-fs
-    trigger late-fs-charger
+    trigger late-fs
     trigger post-fs-data
     trigger moto-charger
     class_stop main
@@ -336,6 +322,18 @@ on property:sys.boot_completed=1 && property:ro.vendor.zram.product_swapon=""
     swapon_all /vendor/etc/fstab.qcom
     write /proc/sys/vm/swappiness 100
     setprop sys.sysctl.swappiness 100
+
+service vendor.mmi-boot-sh /vendor/bin/init.mmi.boot.sh
+    class core
+    user root
+    oneshot
+
+# translate MMI property in order to keep the consistent with QCOM
+on property:ro.vendor.hw.dualsim=true
+   setprop persist.radio.multisim.config dsds
+
+on property:ro.vendor.hw.dualsim=false
+   setprop persist.radio.multisim.config ""
 
 on property:sys.sysctl.swappiness=*
     write /proc/sys/vm/swappiness ${sys.sysctl.swappiness}
@@ -369,6 +367,20 @@ service vendor.hal-fps-sh /vendor/bin/init.oem.fingerprint2.sh
     group system
     oneshot
 
+service fpc_ident /vendor/bin/hw/fpc_ident
+    class late_start
+    user system
+    group system
+    oneshot
+    disabled
+
+service egis_ident /vendor/bin/hw/egis_ident
+    class late_start
+    user system
+    group system
+    oneshot
+    disabled
+
 service vendor.touch-dead-sh /vendor/bin/init.oem.hw.sh -f
     class main
     user root
@@ -399,13 +411,4 @@ on property:ro.boot.revision=*
 service vendor.charge_only_mode /vendor/bin/charge_only_mode
     user root
     group graphics system input
-    capabilities SYS_BOOT
-    disabled
-
-# touchRec
-service vendor.touchRec /vendor/bin/touchRec
-    class late_start
-    user input
-    group input
-    oneshot
     disabled
