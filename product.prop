@@ -1,5 +1,8 @@
-# Audio
-audio.record.delay=50
+# Charger
+ro.charger.enable_suspend=1
 
-# Radio
-persist.vendor.rcs.presence.provision=0
+# IMS
+ro.qcom.ims.use_moto_vt_ext=true
+
+# System server
+arm64.memtag.process.system_server=off
