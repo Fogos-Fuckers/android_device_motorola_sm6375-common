@@ -266,6 +266,10 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     android.hardware.power-service-qti
 
+# Properties
+PRODUCT_VENDOR_PROPERTY_BLACKLIST := \
+    ro.carrier
+
 # RFS MSM MPSS symlinks
 PRODUCT_PACKAGES += \
     rfs_msm_mpss_readonly_vendor_fsg_symlink
